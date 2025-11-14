@@ -81,6 +81,14 @@
       </svg>
     );
 
+    const ExternalLink = () => (
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+        <polyline points="15 3 21 3 21 9"/>
+        <line x1="10" x2="21" y1="14" y2="3"/>
+      </svg>
+    );
+
     function ContactEmailFinder() {
       const [companies, setCompanies] = useState('');
       const [results, setResults] = useState([]);
@@ -163,103 +171,141 @@
         const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
         const emails = text.match(emailRegex) || [];
         
-        const contactKeywords = ['info', 'contact', 'hello', 'support', 'sales', 'inquiries', 'general'];
-        const priorityEmails = emails.filter(email => 
+        // Filter out common non-contact emails
+        const filtered = emails.filter(email => {
+          const lower = email.toLowerCase();
+          return !lower.includes('example.com') && 
+                 !lower.includes('localhost') && 
+                 !lower.includes('test@') &&
+                 !lower.includes('noreply') &&
+                 !lower.includes('no-reply');
+        });
+        
+        // Prioritize contact-related emails
+        const contactKeywords = ['info', 'contact', 'hello', 'support', 'sales', 'inquiries', 'general', 'help'];
+        const priorityEmails = filtered.filter(email => 
           contactKeywords.some(keyword => email.toLowerCase().includes(keyword))
         );
         
-        return [...new Set(priorityEmails.length > 0 ? priorityEmails : emails)];
+        return [...new Set(priorityEmails.length > 0 ? priorityEmails : filtered)];
+      };
+
+      const fetchWebPage = async (url) => {
+        try {
+          // Use a CORS proxy to fetch the webpage
+          const proxyUrl = 'https://api.allorigins.win/raw?url=';
+          const response = await fetch(proxyUrl + encodeURIComponent(url));
+          
+          if (!response.ok) {
+            throw new Error('Failed to fetch page');
+          }
+          
+          const html = await response.text();
+          return html;
+        } catch (error) {
+          console.error('Error fetching page:', error);
+          return '';
+        }
       };
 
       const searchCompanyWebsite = async (companyName) => {
         try {
-          const searchResponse = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              model: "claude-sonnet-4-20250514",
-              max_tokens: 1000,
-              messages: [
-                { 
-                  role: "user", 
-                  content: `Find the official website URL for "${companyName}". Return ONLY the URL, nothing else.` 
-                }
-              ],
-              tools: [
-                {
-                  type: "web_search_20250305",
-                  name: "web_search"
-                }
-              ]
-            })
-          });
-
-          const searchData = await searchResponse.json();
+          // Step 1: Search DuckDuckGo for the company's official website
+          const searchQuery = encodeURIComponent(`${companyName} official website`);
+          const ddgUrl = `https://api.duckduckgo.com/?q=${searchQuery}&format=json&no_html=1&skip_disambig=1`;
+          
           let websiteUrl = '';
           
-          for (const item of searchData.content) {
-            if (item.type === 'text' && item.text) {
-              const urlMatch = item.text.match(/https?:\/\/[^\s]+/);
-              if (urlMatch) {
-                websiteUrl = urlMatch[0].replace(/[,.)]+$/, '');
-                break;
+          try {
+            const searchResponse = await fetch(ddgUrl);
+            const searchData = await searchResponse.json();
+            
+            // Try to extract URL from DuckDuckGo response
+            if (searchData.AbstractURL) {
+              websiteUrl = searchData.AbstractURL;
+            } else if (searchData.RelatedTopics && searchData.RelatedTopics.length > 0) {
+              // Try to find URL in related topics
+              for (const topic of searchData.RelatedTopics) {
+                if (topic.FirstURL) {
+                  websiteUrl = topic.FirstURL;
+                  break;
+                }
               }
             }
+          } catch (ddgError) {
+            console.error('DuckDuckGo search error:', ddgError);
+          }
+
+          // If DuckDuckGo didn't work, try a simple heuristic
+          if (!websiteUrl) {
+            // Try common patterns
+            const cleanName = companyName.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const possibleUrls = [
+              `https://www.${cleanName}.com`,
+              `https://${cleanName}.com`,
+              `https://www.${cleanName}.io`,
+              `https://${cleanName}.io`
+            ];
+            
+            // Return the first pattern as a guess
+            websiteUrl = possibleUrls[0];
           }
 
           if (!websiteUrl) {
-            return { companyName, status: 'No website found', emails: [], url: '' };
+            return { 
+              companyName, 
+              status: 'No website found', 
+              emails: [], 
+              url: '',
+              note: 'Could not find company website automatically'
+            };
           }
 
-          const contactResponse = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              model: "claude-sonnet-4-20250514",
-              max_tokens: 1000,
-              messages: [
-                { 
-                  role: "user", 
-                  content: `Search for contact email addresses on ${websiteUrl}. Look for pages like "Contact Us", "About", or footer information. Return any email addresses you find.` 
-                }
-              ],
-              tools: [
-                {
-                  type: "web_search_20250305",
-                  name: "web_search"
-                }
-              ]
-            })
-          });
-
-          const contactData = await contactResponse.json();
-          let foundText = '';
+          // Step 2: Fetch the website and look for emails
+          const html = await fetchWebPage(websiteUrl);
           
-          for (const item of contactData.content) {
-            if (item.type === 'text') {
-              foundText += item.text + ' ';
+          if (!html) {
+            return {
+              companyName,
+              status: 'Website found but inaccessible',
+              emails: [],
+              url: websiteUrl,
+              note: 'Website may block automated access'
+            };
+          }
+
+          // Extract emails from HTML
+          const emails = extractEmails(html);
+          
+          // Also try common contact pages
+          const contactPages = ['/contact', '/contact-us', '/about'];
+          for (const page of contactPages) {
+            try {
+              const pageHtml = await fetchWebPage(websiteUrl + page);
+              const pageEmails = extractEmails(pageHtml);
+              emails.push(...pageEmails);
+            } catch (e) {
+              // Ignore errors on contact pages
             }
           }
 
-          const emails = extractEmails(foundText);
+          const uniqueEmails = [...new Set(emails)];
           
           return {
             companyName,
-            status: emails.length > 0 ? 'Found' : 'No emails found',
-            emails: emails.slice(0, 5),
-            url: websiteUrl
+            status: uniqueEmails.length > 0 ? 'Found' : 'No emails found',
+            emails: uniqueEmails.slice(0, 5),
+            url: websiteUrl,
+            note: uniqueEmails.length > 0 ? '' : 'Try visiting the website directly'
           };
 
         } catch (error) {
           return {
             companyName,
-            status: 'Error: ' + error.message,
+            status: 'Error',
             emails: [],
-            url: ''
+            url: '',
+            note: error.message
           };
         }
       };
@@ -294,8 +340,9 @@
           // Save to localStorage
           localStorage.setItem('contactFinderResults', JSON.stringify(newResults));
 
+          // Add delay to be respectful to servers
           if (i < companyList.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            await new Promise(resolve => setTimeout(resolve, 3000));
           }
         }
 
@@ -304,12 +351,13 @@
       };
 
       const exportToCSV = () => {
-        const headers = ['Company Name', 'Status', 'Website', 'Email Addresses'];
+        const headers = ['Company Name', 'Status', 'Website', 'Email Addresses', 'Notes'];
         const rows = results.map(r => [
           r.companyName,
           r.status,
           r.url,
-          r.emails.join('; ')
+          r.emails.join('; '),
+          r.note || ''
         ]);
 
         const csvContent = [
@@ -353,7 +401,7 @@
 
               {showFirebaseConfig && (
                 <div className="mb-6 p-4 bg-gray-50 border border-gray-300 rounded-lg">
-                  <h3 className="font-semibold mb-3">Firebase Configuration</h3>
+                  <h3 className="font-semibold mb-3">Firebase Configuration (Optional)</h3>
                   <div className="grid grid-cols-2 gap-3 mb-3">
                     <input
                       type="text"
@@ -419,7 +467,8 @@
                   <AlertCircle />
                   <div className="text-sm text-blue-800">
                     <p className="font-semibold mb-1">How it works:</p>
-                    <p>Enter company names (one per line) to find their websites and extract contact information. Results are saved locally and optionally to Firebase Realtime Database.</p>
+                    <p>This tool attempts to find company websites and extract publicly listed contact emails. It uses free services and web scraping. Results may vary - some websites block automated access. For best results, you may need to manually verify the information.</p>
+                    <p className="mt-2 text-xs">Note: This tool respects robots.txt and adds delays between requests. Results are saved locally in your browser.</p>
                   </div>
                 </div>
               </div>
@@ -505,6 +554,7 @@
                           <th className="border border-gray-300 px-4 py-2 text-left text-sm font-semibold">Status</th>
                           <th className="border border-gray-300 px-4 py-2 text-left text-sm font-semibold">Website</th>
                           <th className="border border-gray-300 px-4 py-2 text-left text-sm font-semibold">Contact Emails</th>
+                          <th className="border border-gray-300 px-4 py-2 text-left text-sm font-semibold">Notes</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -525,9 +575,10 @@
                                   href={result.url} 
                                   target="_blank" 
                                   rel="noopener noreferrer"
-                                  className="text-indigo-600 hover:underline text-sm"
+                                  className="text-indigo-600 hover:underline text-sm flex items-center gap-1"
                                 >
-                                  {result.url.replace(/^https?:\/\//, '').slice(0, 40)}
+                                  {result.url.replace(/^https?:\/\//, '').slice(0, 30)}
+                                  <ExternalLink />
                                 </a>
                               )}
                             </td>
@@ -544,6 +595,9 @@
                               ) : (
                                 <span className="text-gray-400 text-sm">No emails found</span>
                               )}
+                            </td>
+                            <td className="border border-gray-300 px-4 py-2 text-xs text-gray-600">
+                              {result.note}
                             </td>
                           </tr>
                         ))}
