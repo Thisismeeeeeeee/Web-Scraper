@@ -188,11 +188,15 @@
                  !lower.includes('localhost') && 
                  !lower.includes('test@') &&
                  !lower.includes('noreply') &&
-                 !lower.includes('no-reply');
+                 !lower.includes('no-reply') &&
+                 !lower.includes('wixpress') &&
+                 !lower.includes('sentry.io') &&
+                 !lower.includes('.png') &&
+                 !lower.includes('.jpg');
         });
         
         // Prioritize contact-related emails
-        const contactKeywords = ['info', 'contact', 'hello', 'support', 'sales', 'inquiries', 'general', 'help'];
+        const contactKeywords = ['info', 'contact', 'hello', 'support', 'sales', 'inquiries', 'general', 'help', 'business', 'service'];
         const priorityEmails = filtered.filter(email => 
           contactKeywords.some(keyword => email.toLowerCase().includes(keyword))
         );
@@ -204,7 +208,9 @@
         try {
           // Use a CORS proxy to fetch the webpage
           const proxyUrl = 'https://api.allorigins.win/raw?url=';
-          const response = await fetch(proxyUrl + encodeURIComponent(url));
+          const response = await fetch(proxyUrl + encodeURIComponent(url), {
+            timeout: 10000
+          });
           
           if (!response.ok) {
             throw new Error('Failed to fetch page');
@@ -216,6 +222,25 @@
           console.error('Error fetching page:', error);
           return '';
         }
+      };
+
+      const extractEmailsFromHTML = (html) => {
+        if (!html) return [];
+        
+        // Remove script and style tags
+        let cleanHtml = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+        cleanHtml = cleanHtml.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+        
+        // Look for mailto links first (most reliable)
+        const mailtoRegex = /mailto:([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi;
+        const mailtoMatches = [...cleanHtml.matchAll(mailtoRegex)];
+        const mailtoEmails = mailtoMatches.map(match => match[1]);
+        
+        // Extract all emails from text
+        const allEmails = extractEmails(cleanHtml);
+        
+        // Combine with mailto emails having higher priority
+        return [...new Set([...mailtoEmails, ...allEmails])];
       };
 
       const searchCompanyWebsite = async (companyName) => {
@@ -271,42 +296,67 @@
             };
           }
 
-          // Step 2: Fetch the website and look for emails
-          const html = await fetchWebPage(websiteUrl);
+          // Step 2: Fetch the main website and look for emails
+          let allEmails = [];
           
-          if (!html) {
-            return {
-              companyName,
-              status: 'Website found but inaccessible',
-              emails: [],
-              url: websiteUrl,
-              note: 'Website may block automated access'
-            };
+          // Fetch homepage
+          const mainHtml = await fetchWebPage(websiteUrl);
+          if (mainHtml) {
+            const mainEmails = extractEmailsFromHTML(mainHtml);
+            allEmails.push(...mainEmails);
           }
 
-          // Extract emails from HTML
-          const emails = extractEmails(html);
+          // Step 3: Try multiple common contact page variations
+          const contactPaths = [
+            '/contact',
+            '/contact-us',
+            '/contactus',
+            '/contact.html',
+            '/about',
+            '/about-us',
+            '/aboutus',
+            '/about.html',
+            '/support',
+            '/help',
+            '/get-in-touch',
+            '/reach-us',
+            '/company/contact'
+          ];
           
-          // Also try common contact pages
-          const contactPages = ['/contact', '/contact-us', '/about'];
-          for (const page of contactPages) {
+          for (const path of contactPaths) {
             try {
-              const pageHtml = await fetchWebPage(websiteUrl + page);
-              const pageEmails = extractEmails(pageHtml);
-              emails.push(...pageEmails);
+              const contactUrl = websiteUrl.replace(/\/$/, '') + path;
+              const pageHtml = await fetchWebPage(contactUrl);
+              if (pageHtml) {
+                const pageEmails = extractEmailsFromHTML(pageHtml);
+                allEmails.push(...pageEmails);
+              }
+              // Small delay between requests
+              await new Promise(resolve => setTimeout(resolve, 500));
             } catch (e) {
               // Ignore errors on contact pages
+              console.log(`Could not fetch ${path}`);
             }
           }
 
-          const uniqueEmails = [...new Set(emails)];
+          const uniqueEmails = [...new Set(allEmails)];
+          
+          // Sort emails to prioritize contact emails
+          const contactKeywords = ['info', 'contact', 'hello', 'support', 'sales', 'inquiries', 'general', 'help', 'business'];
+          uniqueEmails.sort((a, b) => {
+            const aIsContact = contactKeywords.some(kw => a.toLowerCase().includes(kw));
+            const bIsContact = contactKeywords.some(kw => b.toLowerCase().includes(kw));
+            if (aIsContact && !bIsContact) return -1;
+            if (!aIsContact && bIsContact) return 1;
+            return 0;
+          });
           
           return {
             companyName,
             status: uniqueEmails.length > 0 ? 'Found' : 'No emails found',
             emails: uniqueEmails.slice(0, 5),
             url: websiteUrl,
-            note: uniqueEmails.length > 0 ? '' : 'Try visiting the website directly'
+            note: uniqueEmails.length > 0 ? `Found ${uniqueEmails.length} email(s)` : 'No public contact emails found. Try visiting website directly.'
           };
 
         } catch (error) {
