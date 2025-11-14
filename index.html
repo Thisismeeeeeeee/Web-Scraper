@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Company Contact Finder</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // Lucide icons as SVG components
+    const Building2 = () => (
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
+        <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/>
+        <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
+        <path d="M10 6h4"/>
+        <path d="M10 10h4"/>
+        <path d="M10 14h4"/>
+        <path d="M10 18h4"/>
+      </svg>
+    );
+
+    const Mail = () => (
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect width="20" height="16" x="2" y="4" rx="2"/>
+        <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+      </svg>
+    );
+
+    const Search = () => (
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="11" cy="11" r="8"/>
+        <path d="m21 21-4.3-4.3"/>
+      </svg>
+    );
+
+    const Download = () => (
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/>
+        <line x1="12" x2="12" y1="15" y2="3"/>
+      </svg>
+    );
+
+    const Loader2 = () => (
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-spin">
+        <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+      </svg>
+    );
+
+    const AlertCircle = () => (
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" x2="12" y1="8" y2="12"/>
+        <line x1="12" x2="12.01" y1="16" y2="16"/>
+      </svg>
+    );
+
+    const CheckCircle = () => (
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+        <polyline points="22 4 12 14.01 9 11.01"/>
+      </svg>
+    );
+
+    const Database = () => (
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <ellipse cx="12" cy="5" rx="9" ry="3"/>
+        <path d="M3 5V19A9 3 0 0 0 21 19V5"/>
+        <path d="M3 12A9 3 0 0 0 21 12"/>
+      </svg>
+    );
+
+    function ContactEmailFinder() {
+      const [companies, setCompanies] = useState('');
+      const [results, setResults] = useState([]);
+      const [processing, setProcessing] = useState(false);
+      const [currentCompany, setCurrentCompany] = useState('');
+      const [progress, setProgress] = useState({ current: 0, total: 0 });
+      const [firebaseConfigured, setFirebaseConfigured] = useState(false);
+      const [showFirebaseConfig, setShowFirebaseConfig] = useState(false);
+      const [firebaseConfig, setFirebaseConfig] = useState({
+        apiKey: '',
+        authDomain: '',
+        databaseURL: '',
+        projectId: '',
+        storageBucket: '',
+        messagingSenderId: '',
+        appId: ''
+      });
+
+      useEffect(() => {
+        // Check if Firebase is already configured from localStorage
+        const savedConfig = localStorage.getItem('firebaseConfig');
+        if (savedConfig) {
+          try {
+            const config = JSON.parse(savedConfig);
+            initializeFirebase(config);
+            setFirebaseConfig(config);
+            setFirebaseConfigured(true);
+          } catch (e) {
+            console.error('Error loading Firebase config:', e);
+          }
+        }
+
+        // Load saved results from localStorage
+        const savedResults = localStorage.getItem('contactFinderResults');
+        if (savedResults) {
+          setResults(JSON.parse(savedResults));
+        }
+      }, []);
+
+      const initializeFirebase = (config) => {
+        try {
+          if (!firebase.apps.length) {
+            firebase.initializeApp(config);
+          }
+          setFirebaseConfigured(true);
+          localStorage.setItem('firebaseConfig', JSON.stringify(config));
+        } catch (error) {
+          console.error('Firebase initialization error:', error);
+          alert('Error initializing Firebase: ' + error.message);
+        }
+      };
+
+      const saveFirebaseConfig = () => {
+        if (!firebaseConfig.apiKey || !firebaseConfig.databaseURL) {
+          alert('Please provide at least API Key and Database URL');
+          return;
+        }
+        initializeFirebase(firebaseConfig);
+        setShowFirebaseConfig(false);
+      };
+
+      const saveToFirebase = async (result) => {
+        if (!firebaseConfigured) return;
+
+        try {
+          const db = firebase.database();
+          const timestamp = Date.now();
+          const resultRef = db.ref('companyContacts/' + timestamp);
+          await resultRef.set({
+            ...result,
+            timestamp,
+            date: new Date().toISOString()
+          });
+        } catch (error) {
+          console.error('Error saving to Firebase:', error);
+        }
+      };
+
+      const extractEmails = (text) => {
+        const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+        const emails = text.match(emailRegex) || [];
+        
+        const contactKeywords = ['info', 'contact', 'hello', 'support', 'sales', 'inquiries', 'general'];
+        const priorityEmails = emails.filter(email => 
+          contactKeywords.some(keyword => email.toLowerCase().includes(keyword))
+        );
+        
+        return [...new Set(priorityEmails.length > 0 ? priorityEmails : emails)];
+      };
+
+      const searchCompanyWebsite = async (companyName) => {
+        try {
+          const searchResponse = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "claude-sonnet-4-20250514",
+              max_tokens: 1000,
+              messages: [
+                { 
+                  role: "user", 
+                  content: `Find the official website URL for "${companyName}". Return ONLY the URL, nothing else.` 
+                }
+              ],
+              tools: [
+                {
+                  type: "web_search_20250305",
+                  name: "web_search"
+                }
+              ]
+            })
+          });
+
+          const searchData = await searchResponse.json();
+          let websiteUrl = '';
+          
+          for (const item of searchData.content) {
+            if (item.type === 'text' && item.text) {
+              const urlMatch = item.text.match(/https?:\/\/[^\s]+/);
+              if (urlMatch) {
+                websiteUrl = urlMatch[0].replace(/[,.)]+$/, '');
+                break;
+              }
+            }
+          }
+
+          if (!websiteUrl) {
+            return { companyName, status: 'No website found', emails: [], url: '' };
+          }
+
+          const contactResponse = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "claude-sonnet-4-20250514",
+              max_tokens: 1000,
+              messages: [
+                { 
+                  role: "user", 
+                  content: `Search for contact email addresses on ${websiteUrl}. Look for pages like "Contact Us", "About", or footer information. Return any email addresses you find.` 
+                }
+              ],
+              tools: [
+                {
+                  type: "web_search_20250305",
+                  name: "web_search"
+                }
+              ]
+            })
+          });
+
+          const contactData = await contactResponse.json();
+          let foundText = '';
+          
+          for (const item of contactData.content) {
+            if (item.type === 'text') {
+              foundText += item.text + ' ';
+            }
+          }
+
+          const emails = extractEmails(foundText);
+          
+          return {
+            companyName,
+            status: emails.length > 0 ? 'Found' : 'No emails found',
+            emails: emails.slice(0, 5),
+            url: websiteUrl
+          };
+
+        } catch (error) {
+          return {
+            companyName,
+            status: 'Error: ' + error.message,
+            emails: [],
+            url: ''
+          };
+        }
+      };
+
+      const processCompanies = async () => {
+        const companyList = companies.split('\n').filter(c => c.trim());
+        if (companyList.length === 0) {
+          alert('Please enter at least one company name');
+          return;
+        }
+
+        setProcessing(true);
+        setResults([]);
+        setProgress({ current: 0, total: companyList.length });
+
+        const newResults = [];
+
+        for (let i = 0; i < companyList.length; i++) {
+          const company = companyList[i].trim();
+          setCurrentCompany(company);
+          setProgress({ current: i + 1, total: companyList.length });
+
+          const result = await searchCompanyWebsite(company);
+          newResults.push(result);
+          setResults([...newResults]);
+
+          // Save to Firebase if configured
+          if (firebaseConfigured) {
+            await saveToFirebase(result);
+          }
+
+          // Save to localStorage
+          localStorage.setItem('contactFinderResults', JSON.stringify(newResults));
+
+          if (i < companyList.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        }
+
+        setProcessing(false);
+        setCurrentCompany('');
+      };
+
+      const exportToCSV = () => {
+        const headers = ['Company Name', 'Status', 'Website', 'Email Addresses'];
+        const rows = results.map(r => [
+          r.companyName,
+          r.status,
+          r.url,
+          r.emails.join('; ')
+        ]);
+
+        const csvContent = [
+          headers.join(','),
+          ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'company_contacts.csv';
+        a.click();
+      };
+
+      const loadSampleData = () => {
+        setCompanies('Anthropic\nOpenAI\nGoogle\nMicrosoft\nAmazon');
+      };
+
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
+          <div className="max-w-6xl mx-auto">
+            <div className="bg-white rounded-lg shadow-xl p-8">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <Building2 />
+                  <h1 className="text-3xl font-bold text-gray-800">Company Contact Finder</h1>
+                </div>
+                <button
+                  onClick={() => setShowFirebaseConfig(!showFirebaseConfig)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                    firebaseConfigured 
+                      ? 'bg-green-100 text-green-700 hover:bg-green-200' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <Database />
+                  {firebaseConfigured ? 'Firebase Connected' : 'Configure Firebase'}
+                </button>
+              </div>
+
+              {showFirebaseConfig && (
+                <div className="mb-6 p-4 bg-gray-50 border border-gray-300 rounded-lg">
+                  <h3 className="font-semibold mb-3">Firebase Configuration</h3>
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <input
+                      type="text"
+                      placeholder="API Key"
+                      value={firebaseConfig.apiKey}
+                      onChange={(e) => setFirebaseConfig({...firebaseConfig, apiKey: e.target.value})}
+                      className="px-3 py-2 border border-gray-300 rounded"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Auth Domain"
+                      value={firebaseConfig.authDomain}
+                      onChange={(e) => setFirebaseConfig({...firebaseConfig, authDomain: e.target.value})}
+                      className="px-3 py-2 border border-gray-300 rounded"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Database URL *"
+                      value={firebaseConfig.databaseURL}
+                      onChange={(e) => setFirebaseConfig({...firebaseConfig, databaseURL: e.target.value})}
+                      className="px-3 py-2 border border-gray-300 rounded"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Project ID"
+                      value={firebaseConfig.projectId}
+                      onChange={(e) => setFirebaseConfig({...firebaseConfig, projectId: e.target.value})}
+                      className="px-3 py-2 border border-gray-300 rounded"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Storage Bucket"
+                      value={firebaseConfig.storageBucket}
+                      onChange={(e) => setFirebaseConfig({...firebaseConfig, storageBucket: e.target.value})}
+                      className="px-3 py-2 border border-gray-300 rounded"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Messaging Sender ID"
+                      value={firebaseConfig.messagingSenderId}
+                      onChange={(e) => setFirebaseConfig({...firebaseConfig, messagingSenderId: e.target.value})}
+                      className="px-3 py-2 border border-gray-300 rounded"
+                    />
+                    <input
+                      type="text"
+                      placeholder="App ID"
+                      value={firebaseConfig.appId}
+                      onChange={(e) => setFirebaseConfig({...firebaseConfig, appId: e.target.value})}
+                      className="px-3 py-2 border border-gray-300 rounded col-span-2"
+                    />
+                  </div>
+                  <button
+                    onClick={saveFirebaseConfig}
+                    className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"
+                  >
+                    Save Configuration
+                  </button>
+                </div>
+              )}
+
+              <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <AlertCircle />
+                  <div className="text-sm text-blue-800">
+                    <p className="font-semibold mb-1">How it works:</p>
+                    <p>Enter company names (one per line) to find their websites and extract contact information. Results are saved locally and optionally to Firebase Realtime Database.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-6 mb-6">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Company Names (one per line)
+                  </label>
+                  <textarea
+                    value={companies}
+                    onChange={(e) => setCompanies(e.target.value)}
+                    placeholder="Enter company names, one per line&#10;Example:&#10;Anthropic&#10;OpenAI&#10;Google"
+                    className="w-full h-64 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    disabled={processing}
+                  />
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={loadSampleData}
+                      className="text-sm text-indigo-600 hover:text-indigo-800"
+                      disabled={processing}
+                    >
+                      Load sample data
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-col justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Processing Status</h3>
+                    {processing ? (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 text-indigo-600">
+                          <Loader2 />
+                          <span>Processing: {currentCompany}</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div 
+                            className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${(progress.current / progress.total) * 100}%` }}
+                          />
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          {progress.current} of {progress.total} companies processed
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-gray-500">Ready to process companies</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-3 mt-6">
+                    <button
+                      onClick={processCompanies}
+                      disabled={processing || !companies.trim()}
+                      className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Search />
+                      {processing ? 'Processing...' : 'Find Contact Information'}
+                    </button>
+
+                    {results.length > 0 && !processing && (
+                      <button
+                        onClick={exportToCSV}
+                        className="w-full flex items-center justify-center gap-2 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors"
+                      >
+                        <Download />
+                        Export to CSV
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {results.length > 0 && (
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-800 mb-4">Results</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="bg-gray-50">
+                          <th className="border border-gray-300 px-4 py-2 text-left text-sm font-semibold">Company</th>
+                          <th className="border border-gray-300 px-4 py-2 text-left text-sm font-semibold">Status</th>
+                          <th className="border border-gray-300 px-4 py-2 text-left text-sm font-semibold">Website</th>
+                          <th className="border border-gray-300 px-4 py-2 text-left text-sm font-semibold">Contact Emails</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {results.map((result, idx) => (
+                          <tr key={idx} className="hover:bg-gray-50">
+                            <td className="border border-gray-300 px-4 py-2">{result.companyName}</td>
+                            <td className="border border-gray-300 px-4 py-2">
+                              <span className={`inline-flex items-center gap-1 text-sm ${
+                                result.status === 'Found' ? 'text-green-600' : 'text-gray-600'
+                              }`}>
+                                {result.status === 'Found' && <CheckCircle />}
+                                {result.status}
+                              </span>
+                            </td>
+                            <td className="border border-gray-300 px-4 py-2">
+                              {result.url && (
+                                <a 
+                                  href={result.url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="text-indigo-600 hover:underline text-sm"
+                                >
+                                  {result.url.replace(/^https?:\/\//, '').slice(0, 40)}
+                                </a>
+                              )}
+                            </td>
+                            <td className="border border-gray-300 px-4 py-2">
+                              {result.emails.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {result.emails.map((email, i) => (
+                                    <span key={i} className="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 px-2 py-1 rounded text-sm">
+                                      <Mail />
+                                      {email}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400 text-sm">No emails found</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<ContactEmailFinder />, document.getElementById('root'));
+  </script>
+</body>
+</html>
