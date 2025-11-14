@@ -89,6 +89,16 @@
       </svg>
     );
 
+    const Trash2 = () => (
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 6h18"/>
+        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+        <line x1="10" x2="10" y1="11" y2="17"/>
+        <line x1="14" x2="14" y1="11" y2="17"/>
+      </svg>
+    );
+
     function ContactEmailFinder() {
       const [companies, setCompanies] = useState('');
       const [results, setResults] = useState([]);
@@ -377,6 +387,25 @@
         setCompanies('Anthropic\nOpenAI\nGoogle\nMicrosoft\nAmazon');
       };
 
+      const clearLocalStorage = () => {
+        if (confirm('Are you sure you want to clear all saved results and Firebase configuration? This cannot be undone.')) {
+          localStorage.removeItem('contactFinderResults');
+          localStorage.removeItem('firebaseConfig');
+          setResults([]);
+          setFirebaseConfigured(false);
+          setFirebaseConfig({
+            apiKey: '',
+            authDomain: '',
+            databaseURL: '',
+            projectId: '',
+            storageBucket: '',
+            messagingSenderId: '',
+            appId: ''
+          });
+          alert('Local storage cleared successfully!');
+        }
+      };
+
       return (
         <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
           <div className="max-w-6xl mx-auto">
@@ -386,17 +415,27 @@
                   <Building2 />
                   <h1 className="text-3xl font-bold text-gray-800">Company Contact Finder</h1>
                 </div>
-                <button
-                  onClick={() => setShowFirebaseConfig(!showFirebaseConfig)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-                    firebaseConfigured 
-                      ? 'bg-green-100 text-green-700 hover:bg-green-200' 
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  <Database />
-                  {firebaseConfigured ? 'Firebase Connected' : 'Configure Firebase'}
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={clearLocalStorage}
+                    className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg transition-colors"
+                    title="Clear all saved data"
+                  >
+                    <Trash2 />
+                    Clear Data
+                  </button>
+                  <button
+                    onClick={() => setShowFirebaseConfig(!showFirebaseConfig)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                      firebaseConfigured 
+                        ? 'bg-green-100 text-green-700 hover:bg-green-200' 
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    <Database />
+                    {firebaseConfigured ? 'Firebase Connected' : 'Configure Firebase'}
+                  </button>
+                </div>
               </div>
 
               {showFirebaseConfig && (
