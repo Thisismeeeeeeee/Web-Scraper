@@ -271,21 +271,6 @@
             console.error('DuckDuckGo search error:', ddgError);
           }
 
-          // If DuckDuckGo didn't work, try a simple heuristic
-          if (!websiteUrl) {
-            // Try common patterns
-            const cleanName = companyName.toLowerCase().replace(/[^a-z0-9]/g, '');
-            const possibleUrls = [
-              `https://www.${cleanName}.com`,
-              `https://${cleanName}.com`,
-              `https://www.${cleanName}.io`,
-              `https://${cleanName}.io`
-            ];
-            
-            // Return the first pattern as a guess
-            websiteUrl = possibleUrls[0];
-          }
-
           if (!websiteUrl) {
             return { 
               companyName, 
